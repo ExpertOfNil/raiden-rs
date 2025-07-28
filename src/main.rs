@@ -52,42 +52,34 @@ impl State {
             return;
         }
         log::warn!("Initializing Scene");
-        self.renderer.commands.push(DrawCommand {
-            primitive_type: MeshType::Cube,
-            instance: raiden_rs::renderer::Instance {
-                model_matrix: glam::Mat4 {
-                    x_axis: glam::Vec4::new(0.1, 0.0, 0.0, 0.0),
-                    y_axis: glam::Vec4::new(0.0, 0.1, 0.0, 0.0),
-                    z_axis: glam::Vec4::new(0.0, 0.0, 0.1, 0.0),
-                    w_axis: glam::Vec4::new(4.0, 0.0, 0.0, 1.0),
-                },
-                color: glam::Vec4::new(1.0, 0.0, 0.0, 1.0),
-            },
-        });
-        self.renderer.commands.push(DrawCommand {
-            primitive_type: MeshType::Cube,
-            instance: raiden_rs::renderer::Instance {
-                model_matrix: glam::Mat4 {
-                    x_axis: glam::Vec4::new(0.1, 0.0, 0.0, 0.0),
-                    y_axis: glam::Vec4::new(0.0, 0.1, 0.0, 0.0),
-                    z_axis: glam::Vec4::new(0.0, 0.0, 0.1, 0.0),
-                    w_axis: glam::Vec4::new(0.0, 4.0, 0.0, 1.0),
-                },
-                color: glam::Vec4::new(0.0, 1.0, 0.0, 1.0),
-            },
-        });
-        self.renderer.commands.push(DrawCommand {
-            primitive_type: MeshType::Cube,
-            instance: raiden_rs::renderer::Instance {
-                model_matrix: glam::Mat4 {
-                    x_axis: glam::Vec4::new(0.1, 0.0, 0.0, 0.0),
-                    y_axis: glam::Vec4::new(0.0, 0.1, 0.0, 0.0),
-                    z_axis: glam::Vec4::new(0.0, 0.0, 0.1, 0.0),
-                    w_axis: glam::Vec4::new(0.0, 0.0, 4.0, 1.0),
-                },
-                color: glam::Vec4::new(0.0, 0.0, 1.0, 1.0),
-            },
-        });
+        self.renderer.commands.push(
+            DrawCommandBuilder::new(MeshType::Cube)
+                .with_position([0.0, 0.0, 0.0].into())
+                .with_scale(0.1)
+                .with_color_u8(255, 255, 255, 255)
+                .build(),
+        );
+        self.renderer.commands.push(
+            DrawCommandBuilder::new(MeshType::Cube)
+                .with_position([4.0, 0.0, 0.0].into())
+                .with_scale(0.1)
+                .with_color_u8(255, 0, 0, 255)
+                .build(),
+        );
+        self.renderer.commands.push(
+            DrawCommandBuilder::new(MeshType::Cube)
+                .with_position([0.0, 4.0, 0.0].into())
+                .with_scale(0.1)
+                .with_color_u8(0, 255, 0, 255)
+                .build(),
+        );
+        self.renderer.commands.push(
+            DrawCommandBuilder::new(MeshType::Cube)
+                .with_position([0.0, 0.0, 4.0].into())
+                .with_scale(0.1)
+                .with_color_u8(0, 0, 255, 255)
+                .build(),
+        );
         self.is_scene_initialized = true;
         log::warn!(
             "Scene initialized with commands: {:?}",

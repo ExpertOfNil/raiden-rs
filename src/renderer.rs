@@ -339,7 +339,7 @@ impl Renderer {
             .commands
             .iter()
             .filter_map(|cmd| {
-                if &cmd.primitive_type == mesh_type {
+                if &cmd.mesh_type == mesh_type {
                     Some(cmd.instance)
                 } else {
                     None
