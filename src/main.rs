@@ -1,13 +1,19 @@
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalPosition,
     event::*,
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
 
-use raiden_rs::{camera::PanOrbitCamera, commands::DrawCommand, mesh::MeshType};
+use raiden_rs::{
+    camera::PanOrbitCamera,
+    commands::{DrawCommand, DrawCommandBuilder},
+    mesh::MeshType,
+};
 use std::sync::Arc;
+use std::{any::Any, collections::BTreeMap};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -19,6 +25,7 @@ pub struct MouseState {
     pub button_middle: bool,
     pub position: glam::Vec2,
     pub position_needs_update: bool,
+    pub touches: BTreeMap<u64, PhysicalPosition<f64>>,
 }
 
 pub struct State {
@@ -316,12 +323,88 @@ impl ApplicationHandler<State> for App {
                 };
                 app_state.mouse_state.position_needs_update = true;
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                match delta {
+                    MouseScrollDelta::LineDelta(_, vert) => app_state.camera.zoom(vert),
+                    MouseScrollDelta::PixelDelta(delta) => app_state.camera.zoom(delta.y as f32),
+                }
+                app_state.renderer.update_uniforms(&app_state.camera);
+            }
+            WindowEvent::Touch(Touch {
+                id,
+                location,
+                phase,
+                ..
+            }) => match phase {
+                TouchPhase::Started => {
+                    if app_state.mouse_state.touches.insert(id, location).is_none()
+                        && app_state.mouse_state.touches.len() == 1
+                    {
+                        app_state.mouse_state.position.x = location.x as f32;
+                        app_state.mouse_state.position.y = location.y as f32;
+                    }
+                }
+                TouchPhase::Moved => {
+                    if let Some(prev_pos) = app_state.mouse_state.touches.insert(id, location) {
+                        if app_state.mouse_state.touches.len() == 2 {
+                            // 2-finger pinch zoom
+                            let other_id: u64 = app_state
+                                .mouse_state
+                                .touches
+                                .keys()
+                                .cloned()
+                                .find(|oid| oid != &id)
+                                .unwrap();
+                            let other_pos = app_state.mouse_state.touches.get(&other_id).unwrap();
+                            let other_loc = glam::vec2(other_pos.x as f32, other_pos.y as f32);
+                            let prev_loc = glam::vec2(prev_pos.x as f32, prev_pos.y as f32);
+                            let prev_spc = other_loc.distance(prev_loc);
+                            let curr_loc = glam::vec2(location.x as f32, location.y as f32);
+                            let curr_spc = other_loc.distance(curr_loc);
+                            app_state.camera.zoom((curr_spc - prev_spc) * 0.2);
+                            app_state.renderer.update_uniforms(&app_state.camera);
+                            let primary_touch_key =
+                                *app_state.mouse_state.touches.first_entry().unwrap().key();
+                            if id == primary_touch_key {
+                                let curr_pos = glam::vec2(location.x as f32, location.y as f32);
+                                app_state.mouse_state.position.x = curr_pos.x;
+                                app_state.mouse_state.position.y = curr_pos.y;
+                            }
+                        } else if app_state.mouse_state.touches.len() == 3 {
+                            // 3-finger touch panning
+                            let primary_touch_key =
+                                *app_state.mouse_state.touches.first_entry().unwrap().key();
+                            if id == primary_touch_key {
+                                let curr_pos = glam::vec2(location.x as f32, location.y as f32);
+                                let prev_pos = glam::vec2(prev_pos.x as f32, prev_pos.y as f32);
+                                app_state.camera.pan(curr_pos - prev_pos);
+                                app_state.renderer.update_uniforms(&app_state.camera);
+                                app_state.mouse_state.position.x = curr_pos.x;
+                                app_state.mouse_state.position.y = curr_pos.y;
+                            }
+                        } else {
+                            // 1-finger orbit
+                            let delta = glam::vec2(
+                                (location.x - prev_pos.x) as f32,
+                                (location.y - prev_pos.y) as f32,
+                            );
+                            app_state.camera.orbit(delta);
+                            app_state.renderer.update_uniforms(&app_state.camera);
+                            app_state.mouse_state.position.x = location.x as f32;
+                            app_state.mouse_state.position.y = location.y as f32;
+                        }
+                    }
+                }
+                TouchPhase::Ended => {
+                    app_state.mouse_state.touches.remove(&id);
+                }
+                _ => {}
+            },
             WindowEvent::CursorMoved { position, .. } => {
                 if app_state.mouse_state.position_needs_update {
                     app_state.mouse_state.position.x = position.x as f32;
                     app_state.mouse_state.position.y = position.y as f32;
                     app_state.mouse_state.position_needs_update = false;
-                    log::warn!("Mouse Pos Updated: {position:?}");
                 } else {
                     if app_state.mouse_state.button_left {
                         let mouse_delta = [
