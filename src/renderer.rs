@@ -1,9 +1,9 @@
+use super::camera::Camera;
 use super::commands::DrawCommand;
 use super::mesh::{Mesh, MeshType, Vertex};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
-use super::camera::Camera;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -213,9 +213,12 @@ impl Renderer {
         log::warn!("Initial view: {:?}", proj_matrix * view_matrix);
 
         // Meshes
-        let meshes: HashMap<MeshType, Mesh> = [(MeshType::Cube, Mesh::new_cube(&device))]
-            .into_iter()
-            .collect();
+        let meshes: HashMap<MeshType, Mesh> = [
+            (MeshType::Cube, Mesh::new_cube(&device)),
+            (MeshType::Tetrahedron, Mesh::new_tetrahedron(&device)),
+        ]
+        .into_iter()
+        .collect();
 
         // Bind Groups
         let uniform_bind_group_layout =
