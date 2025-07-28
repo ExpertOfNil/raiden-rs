@@ -41,7 +41,6 @@ impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let mut renderer = raiden_rs::renderer::Renderer::from_winit(window.clone()).await?;
         let camera = PanOrbitCamera::default();
-        log::debug!("Uniforms New:");
         renderer.update_uniforms(&camera);
 
         Ok(Self {
@@ -58,11 +57,11 @@ impl State {
         if self.is_scene_initialized || !self.is_surface_configured {
             return;
         }
-        log::warn!("Initializing Scene");
+        log::debug!("Initializing Scene");
         self.renderer.commands.push(
             DrawCommandBuilder::new(MeshType::Tetrahedron)
                 .with_position([0.0, 0.0, 0.0].into())
-                .with_scale(0.1)
+                .with_scale(0.5)
                 .with_color_u8(255, 255, 255, 255)
                 .build(),
         );
@@ -88,10 +87,6 @@ impl State {
                 .build(),
         );
         self.is_scene_initialized = true;
-        log::warn!(
-            "Scene initialized with commands: {:?}",
-            self.renderer.commands
-        );
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -115,14 +110,13 @@ impl State {
                 self.renderer.surface_config.height,
             );
             self.renderer.update_depth_texture(window_size);
-            log::warn!(
+            log::debug!(
                 "Window Size: {}x{}",
                 self.renderer.surface_config.width,
                 self.renderer.surface_config.height
             );
             self.ensure_scene_initialized();
             self.camera.update_aspect(window_size);
-            log::debug!("Uniforms Resize:");
             self.renderer.update_uniforms(&self.camera);
         }
     }
@@ -186,8 +180,13 @@ impl State {
             for mesh_type in mesh_types {
                 match mesh_type {
                     MeshType::Cube => self.renderer.render_mesh(&mesh_type, &mut render_pass),
-                    MeshType::Tetrahedron => self.renderer.render_mesh(&mesh_type, &mut render_pass),
-                    _ => unimplemented!(),
+                    MeshType::Tetrahedron => {
+                        self.renderer.render_mesh(&mesh_type, &mut render_pass)
+                    }
+                    _ => log::warn!(
+                        "{:?} mesh rendering has not been implemented yet",
+                        mesh_type
+                    ),
                 }
             }
         }

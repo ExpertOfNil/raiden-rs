@@ -130,13 +130,14 @@ impl PanOrbitCamera {
     }
 
     pub fn orbit(&mut self, mouse_delta: glam::Vec2) {
-        log::debug!("Mouse Delta: {mouse_delta}");
+        log::trace!("Mouse Delta: {mouse_delta}");
         self.angle_yaw -= mouse_delta.x * self.mouse_speed;
         self.angle_pitch += mouse_delta.y * self.mouse_speed;
         self.update();
     }
 
     pub fn zoom(&mut self, mouse_scroll: f32) {
+        log::trace!("Mouse Scroll: {mouse_scroll}");
         if mouse_scroll == 0.0 {
             return;
         }
@@ -145,7 +146,7 @@ impl PanOrbitCamera {
     }
 
     pub fn pan(&mut self, mouse_delta: glam::Vec2) {
-        log::debug!("Mouse Delta: {mouse_delta}");
+        log::trace!("Mouse Delta: {mouse_delta}");
         let cos_y = self.angle_pitch.cos();
         let sin_y = self.angle_pitch.sin();
         let cos_x = self.angle_yaw.cos();

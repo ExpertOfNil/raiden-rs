@@ -97,7 +97,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn update_depth_texture(&mut self, window_size: glam::UVec2) {
-        log::warn!("Redarw depth buffer at: {}", window_size);
+        log::debug!("Redarw depth buffer to size: {}", window_size);
         // Depth Buffer
         self.depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
@@ -122,7 +122,7 @@ impl Renderer {
         let uniforms = Uniforms {
             view_proj: camera.proj_matrix() * camera.view_matrix(),
         };
-        log::debug!("Uniforms: {}", uniforms.view_proj);
+        log::trace!("Uniforms: {}", uniforms.view_proj);
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
@@ -210,7 +210,7 @@ impl Renderer {
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        log::warn!("Initial view: {:?}", proj_matrix * view_matrix);
+        log::debug!("Initial view: {:?}", proj_matrix * view_matrix);
 
         // Meshes
         let meshes: HashMap<MeshType, Mesh> = [
