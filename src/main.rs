@@ -9,11 +9,11 @@ use winit::{
 
 use raiden_rs::{
     camera::PanOrbitCamera,
-    commands::{DrawCommand, DrawCommandBuilder},
+    commands::DrawCommandBuilder,
     mesh::MeshType,
 };
 use std::sync::Arc;
-use std::{any::Any, collections::BTreeMap};
+use std::collections::BTreeMap;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -61,26 +61,26 @@ impl State {
         self.renderer.commands.push(
             DrawCommandBuilder::new(MeshType::Sphere)
                 .with_position([0.0, 0.0, 0.0].into())
-                .with_scale(0.5)
+                .with_scale(0.1)
                 .with_color_u8(255, 255, 255, 255)
                 .build(),
         );
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Cube)
+            DrawCommandBuilder::new(MeshType::Sphere)
                 .with_position([4.0, 0.0, 0.0].into())
                 .with_scale(0.1)
                 .with_color_u8(255, 0, 0, 255)
                 .build(),
         );
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Cube)
+            DrawCommandBuilder::new(MeshType::Sphere)
                 .with_position([0.0, 4.0, 0.0].into())
                 .with_scale(0.1)
                 .with_color_u8(0, 255, 0, 255)
                 .build(),
         );
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Cube)
+            DrawCommandBuilder::new(MeshType::Sphere)
                 .with_position([0.0, 0.0, 4.0].into())
                 .with_scale(0.1)
                 .with_color_u8(0, 0, 255, 255)
@@ -122,10 +122,6 @@ impl State {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let window_size = glam::UVec2::new(
-            self.renderer.surface_config.width,
-            self.renderer.surface_config.height,
-        );
         self.ensure_scene_initialized();
         self.window.request_redraw();
         if !self.is_surface_configured {
@@ -142,57 +138,8 @@ impl State {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Encoder"),
                 });
-
-        // TODO (mmckenna) : move to renderer
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.renderer.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&self.renderer.solid_pipeline);
-            render_pass.set_bind_group(0, &self.renderer.uniform_bind_group, &[]);
-
-            // Draw meshes
-            let mesh_types: Vec<MeshType> = self.renderer.meshes.keys().cloned().collect();
-            for mesh_type in mesh_types {
-                match mesh_type {
-                    MeshType::Cube => self.renderer.render_mesh(&mesh_type, &mut render_pass),
-                    MeshType::Tetrahedron => {
-                        self.renderer.render_mesh(&mesh_type, &mut render_pass)
-                    }
-                    MeshType::Sphere => {
-                        self.renderer.render_mesh(&mesh_type, &mut render_pass)
-                    }
-                    _ => log::warn!(
-                        "{:?} mesh rendering has not been implemented yet",
-                        mesh_type
-                    ),
-                }
-            }
-        }
+        self.renderer.solid_render_pass(&mut encoder, &view);
+        self.renderer.outline_render_pass(&mut encoder, &view);
 
         self.renderer
             .queue
@@ -271,7 +218,7 @@ impl ApplicationHandler<State> for App {
     }
 
     #[allow(unused_mut)]
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, mut event: State) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: State) {
         #[cfg(target_arch = "wasm32")]
         {
             let window_size = event.window.inner_size();
@@ -455,7 +402,7 @@ pub fn run() -> anyhow::Result<()> {
         #[cfg(target_arch = "wasm32")]
         &event_loop,
     );
-    event_loop.run_app(&mut app);
+    event_loop.run_app(&mut app)?;
 
     Ok(())
 }

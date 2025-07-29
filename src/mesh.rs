@@ -71,8 +71,21 @@ impl Mesh {
             self.instance_capacity *= 2;
         }
         self.instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Mesh Instance Buffer"),
+            label: Some("Mesh Edge Instance Buffer"),
             size: (self.instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+    }
+
+    pub fn realloc_edge_instance_buffer(&mut self, device: &wgpu::Device, new_capacity: usize) {
+        while self.edge_instance_capacity < new_capacity {
+            self.edge_instance_capacity *= 2;
+        }
+        self.edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Edge Instance Buffer"),
+            size: (self.edge_instance_capacity * std::mem::size_of::<Instance>())
+                as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -232,7 +245,7 @@ impl Mesh {
     }
 
     // TODO (mmckenna) : Review this and use Rust idioms
-    pub fn new_sphere(device: &wgpu::Device , divisions: usize) -> Mesh {
+    pub fn new_sphere(device: &wgpu::Device, divisions: usize) -> Mesh {
         use std::f32::consts::PI;
         let longitude = 2 * divisions;
         let latitude = divisions;
@@ -240,12 +253,8 @@ impl Mesh {
         let n_vertices = 2 + (latitude - 1) * longitude;
 
         // 2 tris per quad
-        let n_indices = 6 * longitude * (latitude - 1);
-        let n_edge_indices = 2 * longitude * ((latitude - 1) + longitude + (latitude - 2));
-
-        //vertices := make([dynamic]Vertex, n_vertices)
-        //indices := make([dynamic]u16, 0, n_indices)
-        //edge_indices := make([dynamic]u16, 0, n_edge_indices)
+        //let n_indices = 6 * longitude * (latitude - 1);
+        //let n_edge_indices = 2 * longitude * ((latitude - 1) + longitude + (latitude - 2));
 
         let mut idx = 0;
         let mut vertices = vec![Vertex::default(); n_vertices];
@@ -263,7 +272,7 @@ impl Mesh {
             let y = phi.cos();
             let r = phi.sin();
 
-            for j in 0 .. longitude {
+            for j in 0..longitude {
                 let theta = j as f32 * 2.0 * PI / longitude as f32; // [0, 2π)
                 let x = r * theta.cos();
                 let z = r * theta.sin();
@@ -285,7 +294,7 @@ impl Mesh {
         let mut indices: Vec<u16> = Vec::new();
 
         // Top cap
-        for j in 0 .. longitude {
+        for j in 0..longitude {
             let next = (j + 1) % longitude;
             indices.push(top_index as u16);
             indices.push(1 + next as u16);
@@ -293,11 +302,11 @@ impl Mesh {
         }
 
         // Middle quads
-        for i in 0 .. (latitude - 2) {
+        for i in 0..(latitude - 2) {
             let row = 1 + i * longitude;
             let next_row = row + longitude;
 
-            for j in 0 .. longitude {
+            for j in 0..longitude {
                 let next = (j + 1) % longitude;
 
                 let a = row + j;
@@ -316,7 +325,7 @@ impl Mesh {
 
         // Bottom cap
         let base = 1 + (latitude - 2) * longitude;
-        for j in 0 .. longitude {
+        for j in 0..longitude {
             let next = (j + 1) % longitude;
             indices.push((base + j) as u16);
             indices.push((base + next) as u16);
@@ -325,13 +334,13 @@ impl Mesh {
 
         // === Edge Indices ===
         let mut edge_indices: Vec<u16> = Vec::new();
-        for j in 0 .. longitude {
+        for j in 0..longitude {
             // Top pole to first ring
             edge_indices.push(top_index as u16);
             edge_indices.push((1 + j) as u16);
 
             // Connect rings vertically
-            for i in 0 .. (latitude - 2) {
+            for i in 0..(latitude - 2) {
                 let current_ring = 1 + i * longitude;
                 let next_ring = current_ring + longitude;
                 edge_indices.push((current_ring + j) as u16);
@@ -345,9 +354,9 @@ impl Mesh {
         }
 
         // Latitude rings (horizontal circles)
-        for i in 1 .. latitude {
+        for i in 1..latitude {
             let ring_start = 1 + (i - 1) * longitude;
-            for j in 0 .. longitude {
+            for j in 0..longitude {
                 let next = (j + 1) % longitude;
                 edge_indices.push((ring_start + j) as u16);
                 edge_indices.push((ring_start + next) as u16);
