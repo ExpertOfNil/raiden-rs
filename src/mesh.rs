@@ -231,122 +231,173 @@ impl Mesh {
         }
     }
 
-    /*
-    pub fn new_sphere(renderer: ^Renderer, divisions: u32) -> Mesh {
-        using linalg
-        longitude := 2 * divisions
-        latitude := divisions
+    // TODO (mmckenna) : Review this and use Rust idioms
+    pub fn new_sphere(device: &wgpu::Device , divisions: usize) -> Mesh {
+        use std::f32::consts::PI;
+        let longitude = 2 * divisions;
+        let latitude = divisions;
 
-        n_vertices := int(2 + (latitude - 1) * longitude)
+        let n_vertices = 2 + (latitude - 1) * longitude;
+
         // 2 tris per quad
-        n_indices := int(6 * longitude * (latitude - 1))
-        n_edge_indices := int(
-            2 * longitude * ((latitude - 1) + longitude + (latitude - 2)),
-        )
+        let n_indices = 6 * longitude * (latitude - 1);
+        let n_edge_indices = 2 * longitude * ((latitude - 1) + longitude + (latitude - 2));
 
-        vertices := make([dynamic]Vertex, n_vertices)
-        indices := make([dynamic]u16, 0, n_indices)
-        edge_indices := make([dynamic]u16, 0, n_edge_indices)
+        //vertices := make([dynamic]Vertex, n_vertices)
+        //indices := make([dynamic]u16, 0, n_indices)
+        //edge_indices := make([dynamic]u16, 0, n_edge_indices)
 
-        idx := 0
-        vertex := &vertices[idx]
+        let mut idx = 0;
+        let mut vertices = vec![Vertex::default(); n_vertices];
+        let mut vertex = &mut vertices[idx];
 
         // Top pole
-        vertex.position = Vec3{0, 1, 0}
-        vertex.normal = normalize(vertex.position)
-        top_index := idx
-        idx += 1
+        vertex.position = glam::vec3(0.0, 1.0, 0.0);
+        vertex.normal = vertex.position.normalize();
+        let top_index = idx;
+        idx += 1;
 
         // Rings (excluding poles)
-        for i in 1 ..< latitude {
-            phi := f32(i) * f32(PI) / f32(latitude) // [0, π]
-            y := cos(phi)
-            r := sin(phi)
+        for i in 1..latitude {
+            let phi = i as f32 * PI / latitude as f32; // [0, π]
+            let y = phi.cos();
+            let r = phi.sin();
 
-            for j in 0 ..< longitude {
-                theta := f32(j) * 2.0 * f32(PI) / f32(longitude) // [0, 2π)
-                x := r * cos(theta)
-                z := r * sin(theta)
+            for j in 0 .. longitude {
+                let theta = j as f32 * 2.0 * PI / longitude as f32; // [0, 2π)
+                let x = r * theta.cos();
+                let z = r * theta.sin();
 
-                vertex = &vertices[idx]
-                vertex.position = Vec3{x, y, z}
-                vertex.normal = normalize(vertex.position)
-                idx += 1
+                vertex = &mut vertices[idx];
+                vertex.position = glam::vec3(x, y, z);
+                vertex.normal = vertex.position.normalize();
+                idx += 1;
             }
         }
 
         // Bottom pole
-        vertex = &vertices[idx]
-        vertex.position = Vec3{0, -1, 0}
-        vertex.normal = normalize(vertex.position)
-        bottom_index := idx
+        vertex = &mut vertices[idx];
+        vertex.position = glam::vec3(0.0, -1.0, 0.0);
+        vertex.normal = vertex.position.normalize();
+        let bottom_index = idx;
 
         // === Indices ===
+        let mut indices: Vec<u16> = Vec::new();
 
         // Top cap
-        for j in 0 ..< longitude {
-            next := (j + 1) % longitude
-            append(&indices, u16(top_index), u16(1 + next), u16(1 + j))
+        for j in 0 .. longitude {
+            let next = (j + 1) % longitude;
+            indices.push(top_index as u16);
+            indices.push(1 + next as u16);
+            indices.push(1 + j as u16);
         }
 
         // Middle quads
-        for i in 0 ..< (latitude - 2) {
-            row := 1 + i * longitude
-            next_row := row + longitude
+        for i in 0 .. (latitude - 2) {
+            let row = 1 + i * longitude;
+            let next_row = row + longitude;
 
-            for j in 0 ..< longitude {
-                next := (j + 1) % longitude
+            for j in 0 .. longitude {
+                let next = (j + 1) % longitude;
 
-                a := u16(row + j)
-                b := u16(row + next)
-                c := u16(next_row + j)
-                d := u16(next_row + next)
+                let a = row + j;
+                let b = row + next;
+                let c = next_row + j;
+                let d = next_row + next;
 
-                append(&indices, a, b, c)
-                append(&indices, b, d, c)
+                indices.push(a as u16);
+                indices.push(b as u16);
+                indices.push(c as u16);
+                indices.push(b as u16);
+                indices.push(d as u16);
+                indices.push(c as u16);
             }
         }
 
         // Bottom cap
-        base := 1 + (latitude - 2) * longitude
-        for j in 0 ..< longitude {
-            next := (j + 1) % longitude
-            append(&indices, u16(base + j), u16(base + next), u16(bottom_index))
+        let base = 1 + (latitude - 2) * longitude;
+        for j in 0 .. longitude {
+            let next = (j + 1) % longitude;
+            indices.push((base + j) as u16);
+            indices.push((base + next) as u16);
+            indices.push(bottom_index as u16);
         }
 
         // === Edge Indices ===
-        for j in 0 ..< longitude {
+        let mut edge_indices: Vec<u16> = Vec::new();
+        for j in 0 .. longitude {
             // Top pole to first ring
-            append(&edge_indices, u16(top_index), u16(1 + j))
+            edge_indices.push(top_index as u16);
+            edge_indices.push((1 + j) as u16);
 
             // Connect rings vertically
-            for i in 0 ..< (latitude - 2) {
-                current_ring := 1 + i * longitude
-                next_ring := current_ring + longitude
-                append(&edge_indices, u16(current_ring + j), u16(next_ring + j))
+            for i in 0 .. (latitude - 2) {
+                let current_ring = 1 + i * longitude;
+                let next_ring = current_ring + longitude;
+                edge_indices.push((current_ring + j) as u16);
+                edge_indices.push((next_ring + j) as u16);
             }
 
             // Last ring to bottom pole
-            last_ring := 1 + (latitude - 2) * longitude
-            append(&edge_indices, u16(last_ring + j), u16(bottom_index))
+            let last_ring = 1 + (latitude - 2) * longitude;
+            edge_indices.push((last_ring + j) as u16);
+            edge_indices.push((bottom_index) as u16);
         }
 
         // Latitude rings (horizontal circles)
-        for i in 1 ..< latitude {
-            ring_start := 1 + (i - 1) * longitude
-            for j in 0 ..< longitude {
-                next := (j + 1) % longitude
-                append(&edge_indices, u16(ring_start + j), u16(ring_start + next))
+        for i in 1 .. latitude {
+            let ring_start = 1 + (i - 1) * longitude;
+            for j in 0 .. longitude {
+                let next = (j + 1) % longitude;
+                edge_indices.push((ring_start + j) as u16);
+                edge_indices.push((ring_start + next) as u16);
             }
         }
 
-        mesh := Mesh {
-            vertices     = vertices,
-            indices      = indices,
-            edge_indices = edge_indices,
+        // Create vertex buffer
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Index Buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let instance_capacity = DEFAULT_INSTANCE_CAPACITY;
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Sphere Instance Buffer"),
+            size: (instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Edge buffers
+        let edge_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Edge Index Buffer"),
+            contents: bytemuck::cast_slice(&edge_indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let edge_instance_capacity = DEFAULT_INSTANCE_CAPACITY;
+        let edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Sphere Edge Instance Buffer"),
+            size: (edge_instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        Mesh {
+            vertices,
+            vertex_buffer,
+            indices,
+            index_buffer,
+            instance_buffer,
+            instance_capacity,
+            edge_indices,
+            edge_index_buffer,
+            edge_instance_buffer,
+            edge_instance_capacity,
         }
-        mesh_create_buffers(&mesh, renderer, n_vertices, n_indices, n_edge_indices)
-        return mesh
     }
-        */
 }

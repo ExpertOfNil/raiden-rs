@@ -59,7 +59,7 @@ impl State {
         }
         log::debug!("Initializing Scene");
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Tetrahedron)
+            DrawCommandBuilder::new(MeshType::Sphere)
                 .with_position([0.0, 0.0, 0.0].into())
                 .with_scale(0.5)
                 .with_color_u8(255, 255, 255, 255)
@@ -181,6 +181,9 @@ impl State {
                 match mesh_type {
                     MeshType::Cube => self.renderer.render_mesh(&mesh_type, &mut render_pass),
                     MeshType::Tetrahedron => {
+                        self.renderer.render_mesh(&mesh_type, &mut render_pass)
+                    }
+                    MeshType::Sphere => {
                         self.renderer.render_mesh(&mesh_type, &mut render_pass)
                     }
                     _ => log::warn!(

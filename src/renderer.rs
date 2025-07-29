@@ -216,6 +216,7 @@ impl Renderer {
         let meshes: HashMap<MeshType, Mesh> = [
             (MeshType::Cube, Mesh::new_cube(&device)),
             (MeshType::Tetrahedron, Mesh::new_tetrahedron(&device)),
+            (MeshType::Sphere, Mesh::new_sphere(&device, 10)),
         ]
         .into_iter()
         .collect();
