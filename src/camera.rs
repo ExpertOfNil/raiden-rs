@@ -35,12 +35,9 @@ pub trait Camera {
 pub struct PanOrbitCamera {
     pub target: glam::Vec3,
     pub distance: f32,
-    pub angle_yaw: f32,
-    pub angle_pitch: f32,
     pub distance_min: f32,
     pub distance_max: f32,
-    pub angle_pitch_min: f32,
-    pub angle_pitch_max: f32,
+    pub orientation: glam::Quat,
     pub mouse_speed: f32,
     pub zoom_speed: f32,
     pub pan_speed: f32,
@@ -69,7 +66,6 @@ impl Camera for PanOrbitCamera {
 
 impl Default for PanOrbitCamera {
     fn default() -> Self {
-        use f32::consts::{FRAC_PI_2, FRAC_PI_4};
         let z_near = 0.1;
         let z_far = 1000.0;
         let aspect = 16.0 / 9.0;
@@ -83,10 +79,7 @@ impl Default for PanOrbitCamera {
             fovy,
             target,
             distance: 10.0,
-            angle_yaw: FRAC_PI_4,
-            angle_pitch: FRAC_PI_4,
-            angle_pitch_min: -FRAC_PI_2 + 0.01,
-            angle_pitch_max: FRAC_PI_2 - 0.01,
+            orientation: glam::Quat::IDENTITY,
             distance_min: 0.1,
             distance_max: 1000.0,
             mouse_speed: 0.005,
@@ -103,21 +96,13 @@ impl Default for PanOrbitCamera {
 impl PanOrbitCamera {
     pub fn update(&mut self) {
         self.distance = f32::clamp(self.distance, self.distance_min, self.distance_max);
-        self.angle_pitch = f32::clamp(self.angle_pitch, self.angle_pitch_min, self.angle_pitch_max);
 
-        let cos_y = self.angle_pitch.cos();
-        let sin_y = self.angle_pitch.sin();
-        let cos_x = self.angle_yaw.cos();
-        let sin_x = self.angle_yaw.sin();
+        let offset = self.orientation * glam::vec3(0.0, -self.distance, 0.0);
+        let position = self.target + offset;
 
-        let position = self.target
-            + glam::Vec3::new(
-                cos_y * cos_x * self.distance,
-                cos_y * sin_x * self.distance,
-                sin_y * self.distance,
-            );
+        let up = self.orientation * glam::Vec3::Z;
 
-        self.view_matrix = glam::Mat4::look_at_rh(position, self.target, glam::Vec3::Z);
+        self.view_matrix = glam::Mat4::look_at_rh(position, self.target, up);
     }
 
     pub fn update_aspect(&mut self, window_size: glam::UVec2) {
@@ -131,8 +116,15 @@ impl PanOrbitCamera {
 
     pub fn orbit(&mut self, mouse_delta: glam::Vec2) {
         log::trace!("Mouse Delta: {mouse_delta}");
-        self.angle_yaw -= mouse_delta.x * self.mouse_speed;
-        self.angle_pitch += mouse_delta.y * self.mouse_speed;
+        let yaw = -mouse_delta.x * self.mouse_speed;
+        let pitch = -mouse_delta.y * self.mouse_speed;
+
+        let yaw_q = glam::Quat::from_axis_angle(glam::Vec3::Z, yaw);
+
+        let rt = self.orientation * glam::Vec3::X;
+        let pitch_q = glam::Quat::from_axis_angle(rt, pitch);
+
+        self.orientation = ((yaw_q * pitch_q) * self.orientation).normalize();
         self.update();
     }
 
@@ -147,18 +139,11 @@ impl PanOrbitCamera {
 
     pub fn pan(&mut self, mouse_delta: glam::Vec2) {
         log::trace!("Mouse Delta: {mouse_delta}");
-        let cos_y = self.angle_pitch.cos();
-        let sin_y = self.angle_pitch.sin();
-        let cos_x = self.angle_yaw.cos();
-        let sin_x = self.angle_yaw.sin();
 
-        let rt = glam::Vec3::new(-sin_x, cos_x, 0.0).normalize();
-        let fw = glam::Vec3::new(cos_y * cos_x, cos_y * sin_x, sin_y).normalize();
-        let up = fw.cross(rt).normalize();
+        let rt = self.orientation * glam::Vec3::X;
+        let up = self.orientation * glam::Vec3::Z;
         let pan_distance = self.distance * self.pan_speed;
-        self.target.x -= (rt.x * mouse_delta.x - up.x * mouse_delta.y) * pan_distance;
-        self.target.y -= (rt.y * mouse_delta.x - up.y * mouse_delta.y) * pan_distance;
-        self.target.z -= (rt.z * mouse_delta.x - up.z * mouse_delta.y) * pan_distance;
+        self.target -= (rt * mouse_delta.x - up * mouse_delta.y) * pan_distance;
         self.update();
     }
 }
