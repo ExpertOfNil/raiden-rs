@@ -3,6 +3,10 @@ name = "raiden-rs"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "main"
+path = "examples/main.rs"
+
 [dependencies]
 glam = { version = "0.30.5", features = ["bytemuck"] }
 anyhow = "1.0"

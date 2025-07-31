@@ -1,5 +1,3 @@
-use std::io::Write;
-
 fn main() {
     let shader_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/shaders");
     //let mut output = std::fs::File::create("src/shaders.rs");
