@@ -1,6 +1,7 @@
 use super::camera::Camera;
 use super::commands::DrawCommand;
 use super::mesh::{Mesh, MeshType, Vertex};
+use super::shaders;
 use std::collections::HashMap;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
@@ -343,11 +344,11 @@ impl Renderer {
         // Solid Render Pipeline
         let vert_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Vertex Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("vert_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::get("vert_shader.wgsl").into()),
         });
         let frag_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Fragment Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("frag_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::get("frag_shader.wgsl").into()),
         });
 
         let solid_pipeline_layout =
@@ -432,7 +433,7 @@ impl Renderer {
         // Note (mmckenna): Reuses solid vertex shader
         let frag_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Outline Fragment Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("outline_frag_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shaders::get("outline_frag_shader.wgsl").into()),
         });
 
         // Note (mmckenna): Reuses solid uniform bind group layout
