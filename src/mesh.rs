@@ -52,39 +52,97 @@ pub enum MeshType {
     Sphere,
 }
 
-pub struct Mesh {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>,
-    pub edge_indices: Vec<u16>,
+#[derive(Debug)]
+pub struct MeshBuffers {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub instance_buffer: wgpu::Buffer,
     pub instance_capacity: usize,
+    pub edge_index_buffer: wgpu::Buffer,
     pub edge_instance_buffer: wgpu::Buffer,
     pub edge_instance_capacity: usize,
-    pub edge_index_buffer: wgpu::Buffer,
+}
+
+impl MeshBuffers {
+    pub fn new(
+        label_prefix: &str,
+        device: &wgpu::Device,
+        vertices: &[Vertex],
+        indices: &[u16],
+        edge_indices: &[u16],
+    ) -> Self {
+        // Create vertex buffer
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{label_prefix} Vertex Buffer")),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{label_prefix} Index Buffer")),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let instance_capacity = DEFAULT_INSTANCE_CAPACITY;
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("{label_prefix} Instance Buffer")),
+            size: (instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Edge buffers
+        let edge_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{label_prefix} Edge Index Buffer")),
+            contents: bytemuck::cast_slice(edge_indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let edge_instance_capacity = DEFAULT_INSTANCE_CAPACITY;
+        let edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("{label_prefix} Edge Instance Buffer")),
+            size: (edge_instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self {
+            vertex_buffer,
+            index_buffer,
+            instance_capacity,
+            instance_buffer,
+            edge_index_buffer,
+            edge_instance_capacity,
+            edge_instance_buffer,
+        }
+    }
+}
+
+pub struct Mesh {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u16>,
+    pub edge_indices: Vec<u16>,
+    pub buffers: MeshBuffers,
 }
 
 impl Mesh {
     pub fn realloc_instance_buffer(&mut self, device: &wgpu::Device, new_capacity: usize) {
-        while self.instance_capacity < new_capacity {
-            self.instance_capacity *= 2;
+        while self.buffers.instance_capacity < new_capacity {
+            self.buffers.instance_capacity *= 2;
         }
-        self.instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        self.buffers.instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Mesh Edge Instance Buffer"),
-            size: (self.instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
+            size: (self.buffers.instance_capacity * std::mem::size_of::<Instance>())
+                as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
     }
 
     pub fn realloc_edge_instance_buffer(&mut self, device: &wgpu::Device, new_capacity: usize) {
-        while self.edge_instance_capacity < new_capacity {
-            self.edge_instance_capacity *= 2;
+        while self.buffers.edge_instance_capacity < new_capacity {
+            self.buffers.edge_instance_capacity *= 2;
         }
-        self.edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        self.buffers.edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Mesh Edge Instance Buffer"),
-            size: (self.edge_instance_capacity * std::mem::size_of::<Instance>())
+            size: (self.buffers.edge_instance_capacity * std::mem::size_of::<Instance>())
                 as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -92,50 +150,14 @@ impl Mesh {
     }
 
     pub fn new_cube(device: &wgpu::Device) -> Self {
-        // Create vertex buffer
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cube Vertex Buffer"),
-            contents: bytemuck::cast_slice(primitives::CUBE_VERTICES),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cube Index Buffer"),
-            contents: bytemuck::cast_slice(primitives::CUBE_INDICES),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let instance_capacity = DEFAULT_INSTANCE_CAPACITY;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Cube Instance Buffer"),
-            size: (instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Edges
-        let edge_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cube Edge Index Buffer"),
-            contents: bytemuck::cast_slice(primitives::CUBE_EDGES),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let edge_instance_capacity = DEFAULT_INSTANCE_CAPACITY;
-        let edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Cube Edge Instance Buffer"),
-            size: (edge_instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        use primitives::{CUBE_EDGES, CUBE_INDICES, CUBE_VERTICES};
+        let buffers = MeshBuffers::new("Cube", device, CUBE_VERTICES, CUBE_INDICES, CUBE_EDGES);
 
         Self {
-            vertices: primitives::CUBE_VERTICES.to_vec(),
-            vertex_buffer,
-            indices: primitives::CUBE_INDICES.to_vec(),
-            index_buffer,
-            instance_buffer,
-            instance_capacity,
-            edge_indices: primitives::CUBE_EDGES.to_vec(),
-            edge_index_buffer,
-            edge_instance_buffer,
-            edge_instance_capacity,
+            vertices: CUBE_VERTICES.to_vec(),
+            indices: CUBE_INDICES.to_vec(),
+            edge_indices: CUBE_EDGES.to_vec(),
+            buffers,
         }
     }
 
@@ -144,14 +166,14 @@ impl Mesh {
         const N_INDICES: usize = 12;
 
         #[rustfmt::skip]
-	let edge_indices: [u16; N_INDICES] = [
-        0, 1,
-        1, 2,
-        2, 0,
-        0, 3,
-        1, 3,
-        2, 3,
-    ];
+        let edge_indices: [u16; N_INDICES] = [
+            0, 1,
+            1, 2,
+            2, 0,
+            0, 3,
+            1, 3,
+            2, 3,
+        ];
 
         let a = (8_f32 / 9_f32).sqrt();
         let b = -1.0 / (2.0 * 6_f32.sqrt());
@@ -169,12 +191,12 @@ impl Mesh {
         vertices[3].position = glam::vec3(0.0, 0.0, e);
 
         #[rustfmt::skip]
-	let indices: [u16; N_INDICES] = [
-        0, 1, 2,
-        0, 2, 3,
-        2, 1, 3,
-        1, 0, 3
-    ];
+        let indices: [u16; N_INDICES] = [
+            0, 1, 2,
+            0, 2, 3,
+            2, 1, 3,
+            1, 0, 3
+        ];
 
         // Create normals
         for v in 0..N_VERTICES {
@@ -197,50 +219,13 @@ impl Mesh {
             vertices[v].normal = v_norm.normalize();
         }
 
-        // Create vertex buffer
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Tetrahedron Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Tetrahedron Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let instance_capacity = DEFAULT_INSTANCE_CAPACITY;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Tetrahedron Instance Buffer"),
-            size: (instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Edges
-        let edge_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Tetrahedron Edge Index Buffer"),
-            contents: bytemuck::cast_slice(&edge_indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let edge_instance_capacity = DEFAULT_INSTANCE_CAPACITY;
-        let edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Tetrahedron Edge Instance Buffer"),
-            size: (edge_instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let buffers = MeshBuffers::new("Tetrahedron", device, &vertices, &indices, &edge_indices);
 
         Mesh {
             vertices: vertices.to_vec(),
             indices: indices.to_vec(),
             edge_indices: edge_indices.to_vec(),
-            vertex_buffer,
-            index_buffer,
-            instance_buffer,
-            instance_capacity,
-            edge_instance_buffer,
-            edge_instance_capacity,
-            edge_index_buffer,
+            buffers,
         }
     }
 
@@ -363,50 +348,13 @@ impl Mesh {
             }
         }
 
-        // Create vertex buffer
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sphere Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sphere Index Buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let instance_capacity = DEFAULT_INSTANCE_CAPACITY;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Sphere Instance Buffer"),
-            size: (instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Edge buffers
-        let edge_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sphere Edge Index Buffer"),
-            contents: bytemuck::cast_slice(&edge_indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let edge_instance_capacity = DEFAULT_INSTANCE_CAPACITY;
-        let edge_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Sphere Edge Instance Buffer"),
-            size: (edge_instance_capacity * std::mem::size_of::<Instance>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let buffers = MeshBuffers::new("Sphere", device, &vertices, &indices, &edge_indices);
 
         Mesh {
             vertices,
-            vertex_buffer,
             indices,
-            index_buffer,
-            instance_buffer,
-            instance_capacity,
             edge_indices,
-            edge_index_buffer,
-            edge_instance_buffer,
-            edge_instance_capacity,
+            buffers,
         }
     }
 }

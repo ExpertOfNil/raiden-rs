@@ -7,13 +7,9 @@ use winit::{
     window::Window,
 };
 
-use raiden_rs::{
-    camera::PanOrbitCamera,
-    commands::DrawCommandBuilder,
-    mesh::MeshType,
-};
-use std::sync::Arc;
+use raiden_rs::{camera::PanOrbitCamera, commands::DrawCommandBuilder, mesh::MeshType};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -39,8 +35,9 @@ pub struct State {
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let mut renderer = raiden_rs::renderer::Renderer::from_winit(window.clone()).await?;
+        let mut renderer = raiden_rs::renderer::Renderer::from_winit_window(window.clone()).await?;
         let camera = PanOrbitCamera::default();
+        renderer.enable_outlines = true;
         renderer.update_uniforms(&camera);
 
         Ok(Self {
@@ -53,20 +50,19 @@ impl State {
         })
     }
 
-    pub fn ensure_scene_initialized(&mut self) {
-        if self.is_scene_initialized || !self.is_surface_configured {
+    pub fn set_render_commands(&mut self) {
+        if !self.is_surface_configured {
             return;
         }
-        log::debug!("Initializing Scene");
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Sphere)
+            DrawCommandBuilder::new(MeshType::Cube)
                 .with_position([0.0, 0.0, 0.0].into())
                 .with_scale(0.1)
                 .with_color_u8(255, 255, 255, 255)
                 .build(),
         );
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Sphere)
+            DrawCommandBuilder::new(MeshType::Tetrahedron)
                 .with_position([4.0, 0.0, 0.0].into())
                 .with_scale(0.1)
                 .with_color_u8(255, 0, 0, 255)
@@ -80,7 +76,7 @@ impl State {
                 .build(),
         );
         self.renderer.commands.push(
-            DrawCommandBuilder::new(MeshType::Sphere)
+            DrawCommandBuilder::new(MeshType::Tetrahedron)
                 .with_position([0.0, 0.0, 4.0].into())
                 .with_scale(0.1)
                 .with_color_u8(0, 0, 255, 255)
@@ -98,59 +94,32 @@ impl State {
             } else {
                 1.0
             };
-            self.renderer.surface_config.width = (width as f32 * scale) as u32;
-            self.renderer.surface_config.height = (height as f32 * scale) as u32;
-            self.renderer
-                .surface
-                .configure(&self.renderer.device, &self.renderer.surface_config);
-            self.is_surface_configured = true;
 
-            let window_size = glam::UVec2::new(
-                self.renderer.surface_config.width,
-                self.renderer.surface_config.height,
+            let window_size = glam::uvec2(
+                (width as f32 * scale) as u32,
+                (height as f32 * scale) as u32,
             );
-            self.renderer.update_depth_texture(window_size);
-            log::debug!(
-                "Window Size: {}x{}",
-                self.renderer.surface_config.width,
-                self.renderer.surface_config.height
-            );
-            self.ensure_scene_initialized();
+            log::debug!("Window Size: {}", window_size);
             self.camera.update_aspect(window_size);
-            self.renderer.update_uniforms(&self.camera);
+            self.renderer.resize(window_size, &self.camera);
+            self.is_surface_configured = true;
         }
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.ensure_scene_initialized();
         self.window.request_redraw();
         if !self.is_surface_configured {
             return Ok(());
         }
-
-        let output = self.renderer.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder =
-            self.renderer
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-        self.renderer.solid_render_pass(&mut encoder, &view);
-        self.renderer.outline_render_pass(&mut encoder, &view);
-
-        self.renderer
-            .queue
-            .submit(std::iter::once(encoder.finish()));
-        output.present();
+        self.set_render_commands();
+        self.renderer.render()?;
         Ok(())
     }
 
-    pub fn handle_key(&self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
+    pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
+            (KeyCode::KeyO, true) => self.renderer.enable_outlines = !self.renderer.enable_outlines,
             _ => {}
         }
     }

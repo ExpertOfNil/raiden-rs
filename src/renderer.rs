@@ -94,9 +94,43 @@ pub struct Renderer {
     pub depth_texture_view: wgpu::TextureView,
     pub commands: Vec<DrawCommand>,
     pub meshes: HashMap<MeshType, Mesh>,
+    pub enable_outlines: bool,
 }
 
 impl Renderer {
+    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let output = self.surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        self.solid_render_pass(&mut encoder, &view);
+        if self.enable_outlines {
+            self.outline_render_pass(&mut encoder, &view);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+        self.commands.clear();
+        Ok(())
+    }
+
+    pub fn resize(&mut self, window_size: glam::UVec2, camera: &impl Camera) {
+        // Update surface configuration
+        self.surface_config.width = window_size.x;
+        self.surface_config.height = window_size.y;
+        self.surface.configure(&self.device, &self.surface_config);
+
+        // Update depth texture and uniforms
+        self.update_depth_texture(window_size);
+        self.update_uniforms(camera);
+    }
+
     pub fn solid_render_pass(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -223,7 +257,7 @@ impl Renderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
 
-    pub async fn from_winit(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
+    pub async fn from_winit_window(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
         let window_size = window.inner_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             #[cfg(not(target_arch = "wasm32"))]
@@ -513,6 +547,7 @@ impl Renderer {
             uniform_bind_group,
             meshes,
             commands: Vec::new(),
+            enable_outlines: false,
         })
     }
 
@@ -534,16 +569,22 @@ impl Renderer {
             })
             .collect();
 
-        if instances.len() > mesh.instance_capacity {
+        if instances.len() > mesh.buffers.instance_capacity {
             mesh.realloc_instance_buffer(&self.device, instances.len());
         }
         // Write instances to the buffer
-        self.queue
-            .write_buffer(&mesh.instance_buffer, 0, bytemuck::cast_slice(&instances));
+        self.queue.write_buffer(
+            &mesh.buffers.instance_buffer,
+            0,
+            bytemuck::cast_slice(&instances),
+        );
 
-        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, mesh.instance_buffer.slice(..));
-        render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_vertex_buffer(0, mesh.buffers.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, mesh.buffers.instance_buffer.slice(..));
+        render_pass.set_index_buffer(
+            mesh.buffers.index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
         render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..instances.len() as u32);
     }
 
@@ -572,19 +613,22 @@ impl Renderer {
             })
             .collect();
 
-        if instances.len() > mesh.edge_instance_capacity {
+        if instances.len() > mesh.buffers.edge_instance_capacity {
             mesh.realloc_edge_instance_buffer(&self.device, instances.len());
         }
         // Write instances to the buffer
         self.queue.write_buffer(
-            &mesh.edge_instance_buffer,
+            &mesh.buffers.edge_instance_buffer,
             0,
             bytemuck::cast_slice(&instances),
         );
 
-        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, mesh.edge_instance_buffer.slice(..));
-        render_pass.set_index_buffer(mesh.edge_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_vertex_buffer(0, mesh.buffers.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, mesh.buffers.edge_instance_buffer.slice(..));
+        render_pass.set_index_buffer(
+            mesh.buffers.edge_index_buffer.slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
         render_pass.draw_indexed(
             0..mesh.edge_indices.len() as u32,
             0,
