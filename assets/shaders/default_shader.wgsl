@@ -40,3 +40,16 @@ fn vs_main(input: VertexInput, instance: Instance) -> VertexOutput {
     output.world_normal = normalize((model_matrix * vec4<f32>(input.normal, 0.0)).xyz);
     return output;
 }
+
+// Fragment shader for solid render pass
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let ambient_color = vec4<f32>(vec3<f32>(0.5), 1.0);
+    return vec4<f32>(ambient_color * input.color);
+}
+
+// Fragment shader for outline render pass
+@fragment
+fn outline_fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    return input.color;
+}
