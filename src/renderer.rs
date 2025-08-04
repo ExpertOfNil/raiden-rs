@@ -84,25 +84,22 @@ pub struct Renderer {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub surface: wgpu::Surface<'static>,
-    pub surface_config: wgpu::SurfaceConfiguration,
+    pub surface: Option<wgpu::Surface<'static>>,
+    pub surface_config: Option<wgpu::SurfaceConfiguration>,
     pub solid_pipeline: wgpu::RenderPipeline,
     pub outline_pipeline: wgpu::RenderPipeline,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub depth_texture: wgpu::Texture,
     pub depth_texture_view: wgpu::TextureView,
+    pub headless_texture: Option<wgpu::Texture>,
     pub commands: Vec<DrawCommand>,
     pub meshes: HashMap<MeshType, Mesh>,
     pub enable_outlines: bool,
 }
 
 impl Renderer {
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+    fn render_to_view(&mut self, view: &wgpu::TextureView) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -115,16 +112,62 @@ impl Renderer {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    fn render_to_surface(&mut self) -> Result<(), anyhow::Error> {
+        let surface = self.surface.as_ref().expect("No surface available for render");
+        let output = surface.get_current_texture()?;
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.render_to_view(&view);
         output.present();
         self.commands.clear();
         Ok(())
     }
 
+    fn render_headless(&mut self) -> anyhow::Result<()> {
+        if let Some(ref headless_texture) = self.headless_texture {
+            let view = headless_texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+
+            self.solid_render_pass(&mut encoder, &view);
+            if self.enable_outlines {
+                self.outline_render_pass(&mut encoder, &view);
+            }
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+            self.commands.clear();
+            Ok(())
+        } else {
+            let msg = "Attempting to render headless with no output texture";
+            log::error!("{msg}");
+            Err(anyhow::anyhow!(msg))
+        }
+    }
+
+    pub fn render(&mut self) -> anyhow::Result<()> {
+        if self.surface.is_some() {
+            self.render_to_surface()
+        } else {
+            self.render_headless()
+        }
+    }
+
     pub fn resize(&mut self, window_size: glam::UVec2, camera: &impl Camera) {
         // Update surface configuration
-        self.surface_config.width = window_size.x;
-        self.surface_config.height = window_size.y;
-        self.surface.configure(&self.device, &self.surface_config);
+        if let Some(ref mut surface_config) = self.surface_config {
+            surface_config.width = window_size.x;
+            surface_config.height = window_size.y;
+            if let Some(ref surface) = self.surface {
+                surface.configure(&self.device, surface_config);
+            }
+        }
 
         // Update depth texture and uniforms
         self.update_depth_texture(window_size);
@@ -257,45 +300,30 @@ impl Renderer {
             .write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
 
-    pub async fn from_winit_window(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
-        let window_size = window.inner_size();
+    pub async fn new_headless(width: u32, height: u32) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
-            #[cfg(target_arch = "wasm32")]
-            backends: wgpu::Backends::all(),
             ..Default::default()
         });
-        let surface = instance
-            .create_surface(window.clone())
-            .expect("Failed to create surface");
-        log::debug!("Surface created.");
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                compatible_surface: Some(&surface),
+                compatible_surface: None,
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
             })
             .await?;
 
-        let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(surface_caps.formats[0]);
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-            width: window_size.width,
-            height: window_size.height,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
+        Self::init_renderer(None, width, height, adapter).await
+    }
+
+    async fn init_renderer(
+        surface: Option<wgpu::Surface<'static>>,
+        width: u32,
+        height: u32,
+        adapter: wgpu::Adapter,
+    ) -> anyhow::Result<Self> {
+        log::debug!("Renderer with surface: {}", surface.is_some());
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -311,12 +339,55 @@ impl Renderer {
             })
             .await?;
 
+        let (surface_format, surface_config, headless_texture) = if let Some(ref surface) = surface
+        {
+            let surface_caps = surface.get_capabilities(&adapter);
+            let surface_format = surface_caps
+                .formats
+                .iter()
+                .find(|f| f.is_srgb())
+                .copied()
+                .unwrap_or(surface_caps.formats[0]);
+            let surface_config = wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: surface_format,
+                width,
+                height,
+                present_mode: wgpu::PresentMode::Fifo,
+                alpha_mode: surface_caps.alpha_modes[0],
+                view_formats: vec![],
+                desired_maximum_frame_latency: 2,
+            };
+            surface.configure(&device, &surface_config);
+            (surface_format, Some(surface_config), None)
+        } else {
+            // TODO (mmckenna) : Find best format.  Possibly `Bgra8UnormSrgb`.
+            let surface_format = wgpu::TextureFormat::Rgba8Unorm;
+            let headless_texture = Some(device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Headless Texture"),
+                size: wgpu::Extent3d {
+                    width: width.max(1),
+                    height: height.max(1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: surface_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+            }));
+            (surface_format, None, headless_texture)
+        };
+
         // Depth Buffer
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Depth Texture"),
             size: wgpu::Extent3d {
-                width: window_size.width.max(1),
-                height: window_size.height.max(1),
+                width: width.max(1),
+                height: height.max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -530,6 +601,7 @@ impl Renderer {
             queue,
             surface,
             surface_config,
+            headless_texture,
             depth_texture,
             depth_texture_view,
             solid_pipeline,
@@ -540,6 +612,23 @@ impl Renderer {
             commands: Vec::new(),
             enable_outlines: false,
         })
+    }
+
+    pub async fn new_with_surface(
+        surface: wgpu::Surface<'static>,
+        instance: wgpu::Instance,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<Self> {
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+            })
+            .await?;
+
+        Self::init_renderer(Some(surface), width, height, adapter).await
     }
 
     pub fn render_mesh(&mut self, mesh_type: &MeshType, render_pass: &mut wgpu::RenderPass<'_>) {
@@ -626,19 +715,4 @@ impl Renderer {
             0..instances.len() as u32,
         );
     }
-}
-
-pub struct OffscreenRenderer {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub solid_pipeline: wgpu::RenderPipeline,
-    pub outline_pipeline: wgpu::RenderPipeline,
-    pub uniform_buffer: wgpu::Buffer,
-    pub bind_group: wgpu::BindGroup,
-    pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
-    pub depth_texture: wgpu::Texture,
-    pub depth_view: wgpu::TextureView,
-    pub commands: Vec<DrawCommand>,
-    pub meshes: HashMap<MeshType, Mesh>,
 }

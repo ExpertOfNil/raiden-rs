@@ -6,16 +6,27 @@ edition = "2024"
 [[bin]]
 name = "main"
 path = "examples/main.rs"
+required_features = ["winit"]
 
 [dependencies]
 glam = { version = "0.30.5", features = ["bytemuck"] }
 anyhow = "1.0"
-winit = { version = "0.30", features = ["android-native-activity"]}
-env_logger = "0.10"
 log = "0.4"
 wgpu = "25.0"
-pollster = "0.3"
 bytemuck = "1.23.1"
+# Optional windowing dependencies
+winit = { version = "0.30", features = ["android-native-activity"], optional = true }
+sdl3 = { version = "0.14", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+
+[dev-dependencies]
+pollster = "0.3"
+env_logger = "0.10"
+
+[features]
+default = ["winit", "dep:pollster", "dep:env_logger"]
+winit = ["dep:winit"]
+sdl3 = ["dep:sdl3", "dep:raw-window-handle"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"

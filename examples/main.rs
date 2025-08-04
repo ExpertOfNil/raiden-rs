@@ -106,7 +106,7 @@ impl State {
         }
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self) -> anyhow::Result<()> {
         self.window.request_redraw();
         if !self.is_surface_configured {
             return Ok(());
@@ -216,12 +216,18 @@ impl ApplicationHandler<State> for App {
             WindowEvent::Resized(size) => app_state.resize(size.width, size.height),
             WindowEvent::RedrawRequested => match app_state.render() {
                 Ok(_) => {}
-                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                    let size = app_state.window.inner_size();
-                    app_state.resize(size.width, size.height);
-                }
                 Err(e) => {
-                    log::error!("Unable to render {}", e);
+                    if let Some(surface_error) = e.downcast_ref::<wgpu::SurfaceError>() {
+                        match surface_error {
+                            wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
+                                let size = app_state.window.inner_size();
+                                app_state.resize(size.width, size.height);
+                            }
+                            _ => log::error!("SurfaceError: {:?}", surface_error),
+                        }
+                    } else {
+                        log::error!("Unable to render {}", e);
+                    }
                 }
             },
             WindowEvent::KeyboardInput {
